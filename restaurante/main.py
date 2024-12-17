@@ -1,81 +1,127 @@
-from flask import Flask, request, jsonify
+from database_connection import get_connection
+from infraestructure.user_repository import UserRepository
+from infraestructure.menu_repository import MenuRepository
+from infraestructure.order_repository import OrderRepository
+from infraestructure.logs_utils import Logger
 from models.user import User
-from models.menu import Menu
-from models.order import Order
-from database.connection import get_db_connection
-from services.api_service import ApiService
-import logging
 import bcrypt
-# Configuración de la Aplicación
-app = Flask(__name__)
-logging.basicConfig(filename='app.log', level=logging.ERROR)
 
-@app.route('/menu', methods=['GET'])
-def show_menu():
-    try:
-        menus = ApiService.get_all_menus()
-        return jsonify(menus)
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        return jsonify({"error": "Error al obtener el menú"}), 500
+# Inicializar la conexión
+conn = get_connection()
 
-@app.route('/menu/<int:menu_id>', methods=['GET'])
-def show_menu_by_id(menu_id):
-    try:
-        menu = ApiService.get_menu_details(menu_id)
-        return jsonify(menu)
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        return jsonify({"error": "Error al obtener el detalle del menú"}), 500
+# Instanciar repositorios
+user_repository = UserRepository(conn)
+menu_repository = MenuRepository(conn)
+order_repository = OrderRepository(conn)
+logs_utils = Logger(conn)
 
-@app.route('/register', methods=['POST'])
-def register_user():
-    data = request.json
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        new_user = User(None, data['name'], data['username'], data['password'])
-        cursor.execute("INSERT INTO users (name, username, password) VALUES (%s, %s, %s)",
-                       (new_user.name, new_user.username, new_user.password))
-        conn.commit()
-        return jsonify({"message": "Usuario registrado correctamente"})
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        return jsonify({"error": "Error al registrar usuario"}), 500
+# Menú principal
 
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.json
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username = %s", (data['username'],))
-        user = cursor.fetchone()
-        if user and bcrypt.checkpw(data['password'].encode(), user[3].encode()):
-            return jsonify({"message": "Inicio de sesión exitoso"})
+def menu_restaurante():
+    while True:
+        try:
+            print("\n")
+            print("1. Crear un menú")
+            print("2. Ver todos los menús")
+            print("3. Ver detalles de un menú")
+            print("4. Editar un menú")
+            print("5. Eliminar un menú")
+            print("6. Realizar un pedido")
+            print("7. Cancelar un pedido")
+            print("8. Mostrar pedidos activos")
+            print("9. Volver al menú principal")
+            option = input("Ingrese una opción: ")
+            if option == "1":
+                menu = menu_repository.get_menu_input() 
+                menu_repository.create_menu(menu)
+                print("Menú creado con éxito")
+            elif option == "2":
+                menu_repository.all_menus_info()
+            elif option == "3":
+                menu_id = int(input("Ingrese el ID del menú: "))
+                menu = menu_repository.get_menu_by_id(menu_id)
+                if menu:
+                    print(f"Menú encontrado: \nNombre: {menu.get_name()}\nDescripción: {menu.get_description()}\nPrecio: {menu.get_price()}\nDisponibilidad: {menu.get_availability()}")
+                else:
+                    print("Menú no encontrado.")
+            elif option == "4":
+                menu_repository.all_menus_info()
+                menu = menu_repository.get_menu_input_for_editing()
+                menu_repository.update_menu(menu)
+                print("Menú editado correctamente")
+            elif option == "5":
+                menu_repository.all_menus_info()
+                menu_id = int(input("Ingrese el ID del menú que desea eliminar: "))
+                menu_repository.delete_menu(menu_id)
+                print("Menú eliminado correctamente")
+            elif option == "6":
+                menu_repository.all_menus_info()
+                try:
+                    menu_id = int(input("Ingrese el ID del menú que desea ordenar: "))
+                    if not menu_repository.is_menu_available(menu_id):
+                        print("Menú no disponible")
+                    else:
+                        name = input("Ingrese el nombre del usuario: ")
+                        password = input("Ingrese la contraseña del usuario: ")
+                        user = user_repository.login_user(name, password)
+                        if user:
+                            menu = menu_repository.get_menu_by_id(menu_id)
+                            order_repository.place_order(menu, user)
+                        else:
+                            print("Usuario o contraseña inválidos")
+                except Exception as e:
+                    print(f"Ha ocurrido un error: {e}")
+                    logs_utils.register_log(f"Error: {e}")
+            elif option == "7":
+                order_repository.show_orders()
+                order_id = int(input("Ingrese el ID del pedido a cancelar: "))
+                menu_id = int(input("Ingrese el ID del menú asociado al pedido: "))
+                menu = menu_repository.get_menu_by_id(menu_id)
+                order_repository.cancel_order(order_id, menu)
+            elif option == "8":
+                order_repository.show_orders()
+            elif option == "9":
+                print("Volviendo al menú principal\n")
+                return
+            else:
+                print("Debe ingresar una opción válida entre 1 y 9")
+        except ValueError as e:
+            print(f"Error: {e}")
+            logs_utils.register_log(f"Error: {e}")
+
+# Menú para gestionar usuarios
+while True:
+    print("RESTAURANTE")
+    print("1. Registrar un usuario")
+    print("2. Iniciar sesión")
+    print("3. Salir")
+    option = input("Ingrese su opción: ")
+    if option == "1":
+        try:
+            name = input("Ingrese el nombre del usuario: ").strip()
+            password = input("Ingrese la contraseña del usuario: ").strip()
+            if not name or not password:
+                print("Error: Nombre o contraseña no pueden estar vacíos.")
+            else:
+                hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                user = User()
+                user.set_name(name)
+                user.set_password(hashed_password)
+                user_repository.create_user(user)
+                print("Usuario registrado exitosamente.")
+        except ValueError as e:
+            print(f"Error: {e}")
+    elif option == "2":
+        name = input("Ingrese el nombre del usuario: ")
+        password = input("Ingrese la contraseña del usuario: ")
+        result = user_repository.login_user(name, password)
+        if result:
+            print(f"Bienvenido a la tienda {result.get_name()}")
+            menu_restaurante()
         else:
-            return jsonify({"error": "Credenciales incorrectas"}), 401
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        return jsonify({"error": "Error al iniciar sesión"}), 500
-
-@app.route('/update_menu_db', methods=['POST'])
-def update_menu_db():
-    try:
-        menus = ApiService.get_all_menus()
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        for menu in menus:
-            cursor.execute(
-                "REPLACE INTO menus (menu_id, name, description, price, availability) VALUES (%s, %s, %s, %s, %s)",
-                (menu['id'], menu['name'], menu['description'], menu['price'], menu['availability'])
-            )
-        conn.commit()
-        return jsonify({"message": "Base de datos actualizada correctamente"})
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        return jsonify({"error": "Error al actualizar la base de datos"}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True)
+            print("El usuario o contraseña son inválidos.")
+    elif option == "3":
+        print("El programa se ha cerrado correctamente")
+        break
+    else:
+        print("Debe ingresar una opción válida entre 1 y 3")
