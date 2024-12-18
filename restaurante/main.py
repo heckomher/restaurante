@@ -1,3 +1,4 @@
+from flask import app,Flask, jsonify
 from database_connection import get_connection
 from infraestructure.user_repository import UserRepository
 from infraestructure.menu_repository import MenuRepository
@@ -5,15 +6,22 @@ from infraestructure.order_repository import OrderRepository
 from infraestructure.logs_utils import Logger
 from models.user import User
 import bcrypt
-
+from credentials_db import host,user,password,database
+import getpass
 # Inicializar la conexión
 conn = get_connection()
+menu_repository = MenuRepository(conn)
+
+# Inicializa la aplicación Flask
+app = Flask(__name__)
 
 # Instanciar repositorios
 user_repository = UserRepository(conn)
 menu_repository = MenuRepository(conn)
 order_repository = OrderRepository(conn)
 logs_utils = Logger(conn)
+
+
 
 # Menú principal
 
@@ -62,7 +70,7 @@ def menu_restaurante():
                         print("Menú no disponible")
                     else:
                         name = input("Ingrese el nombre del usuario: ")
-                        password = input("Ingrese la contraseña del usuario: ")
+                        password = getpass.getpass("Ingrese la contraseña del usuario: ")
                         user = user_repository.login_user(name, password)
                         if user:
                             menu = menu_repository.get_menu_by_id(menu_id)
@@ -91,7 +99,7 @@ def menu_restaurante():
 
 # Menú para gestionar usuarios
 while True:
-    print("RESTAURANTE")
+    print("HELLO, AND WELCOME TO LOS POLLOS HERMANOS FAMILY")
     print("1. Registrar un usuario")
     print("2. Iniciar sesión")
     print("3. Salir")
@@ -99,7 +107,7 @@ while True:
     if option == "1":
         try:
             name = input("Ingrese el nombre del usuario: ").strip()
-            password = input("Ingrese la contraseña del usuario: ").strip()
+            password = getpass.getpass("Ingrese la contraseña del usuario: ").strip()
             if not name or not password:
                 print("Error: Nombre o contraseña no pueden estar vacíos.")
             else:
@@ -116,7 +124,7 @@ while True:
         password = input("Ingrese la contraseña del usuario: ")
         result = user_repository.login_user(name, password)
         if result:
-            print(f"Bienvenido a la tienda {result.get_name()}")
+            print(f"Bienvenido a la tienda {result.get_name()}!")
             menu_restaurante()
         else:
             print("El usuario o contraseña son inválidos.")
@@ -125,3 +133,10 @@ while True:
         break
     else:
         print("Debe ingresar una opción válida entre 1 y 3")
+        
+@app.route('/sync_menus', methods=['GET'])
+def sync_menus():
+    result = menu_repository.fetch_menus_from_api()
+    return jsonify({"message": result})
+if __name__ == '__main__':
+    app.run(debug=True)
